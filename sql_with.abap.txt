@@ -1,0 +1,149 @@
+REPORT YEFR_sql_with.
+
+ WITH
+    " Lee Business Partner
+    +t_knvp_ag AS (
+       SELECT
+       cvi_cust_link~partner_guid,
+       cvi_cust_link~customer,
+       partner,
+       kunnr,
+       kunn2 AS kunnr_ag,
+       knvp~vkorg,
+       knvp~vtweg,
+       knvp~spart,
+       but000~name_org4,
+       but000~name_org1
+       FROM cvi_cust_link
+       INNER JOIN but000 ON ( but000~partner_guid = cvi_cust_link~partner_guid )
+       INNER JOIN knvp   ON ( knvp~kunnr EQ cvi_cust_link~customer AND
+                              knvp~vtweg IN ( 'P1', 'P2', 'P3', 'P4', 'P5', 'P6' ) AND
+                              knvp~spart IN ( 'N1', 'N2' ) AND
+                              knvp~parvw EQ 'AG' ) ) ,
+    +t_knvp_ag_rg AS (
+        SELECT t_knvp_ag~*,
+               knvp~kunn2 AS kunnr_rg
+        FROM +t_knvp_ag AS t_knvp_ag
+        LEFT JOIN knvp  ON ( knvp~kunnr EQ t_knvp_ag~kunnr AND
+                             knvp~vkorg EQ t_knvp_ag~vkorg AND
+                             knvp~vtweg EQ t_knvp_ag~vtweg AND
+                             knvp~spart EQ t_knvp_ag~spart AND
+                             knvp~parvw EQ 'RG' ) ) ,
+    +t_knvp_ag_rg_we AS (
+        SELECT t_knvp_ag_rg~*,
+               knvp~kunn2 AS kunnr_we
+        FROM +t_knvp_ag_rg AS t_knvp_ag_rg
+        LEFT JOIN knvp  ON ( knvp~kunnr EQ t_knvp_ag_rg~kunnr AND
+                             knvp~vkorg EQ t_knvp_ag_rg~vkorg AND
+                             knvp~vtweg EQ t_knvp_ag_rg~vtweg AND
+                             knvp~spart EQ t_knvp_ag_rg~spart AND
+                             knvp~parvw EQ 'WE' ) ) ,
+
+     " Lee datos de interlocutor
+    +t_cliente AS (
+        SELECT t_knvp_ag_rg_we~*,
+               knvv~vwerk, knvv~kdgrp
+        FROM +t_knvp_ag_rg_we AS t_knvp_ag_rg_we
+        LEFT JOIN knvv ON ( knvv~kunnr = t_knvp_ag_rg_we~kunnr_ag AND
+                            knvv~vkorg = t_knvp_ag_rg_we~vkorg AND
+                            knvv~vtweg = t_knvp_ag_rg_we~vtweg AND
+                            knvv~spart = t_knvp_ag_rg_we~spart ) ),
+
+    " Lee Motivo para bloqueo en gestión créditos
+    +t_bloqueo AS (
+        SELECT t_ukmbp~partner,
+               t_ukmbp~block_reason,
+               t_txt~block_reason_txt
+        FROM ukmbp_cms_sgm AS t_ukmbp
+        INNER JOIN kna1 ON ( kna1~kunnr = t_ukmbp~partner )
+        LEFT JOIN ukm_bl_reason0t AS t_txt ON ( t_txt~langu        = @sy-langu AND
+                                                t_txt~block_reason = t_ukmbp~block_reason )
+         ),
+    " Lee nombre del cliente
+    +t_kna1_ag AS (
+        SELECT DISTINCT kna1~kunnr,
+               kna1~name1, kna1~name2,
+               kna1~stcd1, kna1~stras, kna1~ort02,
+               kna1~ort01, kna1~pstlz, kna1~regio
+         FROM kna1
+        INNER JOIN +t_cliente AS t_cliente ON ( t_cliente~kunnr_ag = kna1~kunnr )
+        WHERE t_cliente~kunnr_ag IS NOT NULL
+         ),
+    +t_kna1_rg AS (
+        SELECT DISTINCT kna1~kunnr,
+               kna1~name1, kna1~name2,
+               kna1~stcd1, kna1~stras, kna1~ort02,
+               kna1~ort01, kna1~pstlz, kna1~regio
+         FROM kna1
+        INNER JOIN +t_cliente AS t_cliente ON ( t_cliente~kunnr_rg = kna1~kunnr )
+        WHERE t_cliente~kunnr_rg IS NOT NULL
+         ),
+    +t_kna1_we AS (
+        SELECT DISTINCT kna1~kunnr,
+               kna1~name1, kna1~name2,
+               kna1~stcd1, kna1~stras, kna1~ort02,
+               kna1~ort01, kna1~pstlz, kna1~regio
+         FROM kna1
+        INNER JOIN +t_cliente AS t_cliente ON ( t_cliente~kunnr_we = kna1~kunnr )
+        WHERE t_cliente~kunnr_we IS NOT NULL
+         ),
+    +t_bp001 AS (
+        SELECT bp001~partner, bank_del_d
+        FROM bp001
+        INNER JOIN +t_cliente AS t_cliente ON ( bp001~partner = t_cliente~partner )
+        ),
+*--------------------------------------------------------------------*
+    +result AS (
+        SELECT
+        t_cliente~partner                          AS id_interlocutorcomercial ,
+        t_cliente~kunnr_ag                         AS id_solicitante,
+        concat_with_space( t_kna1_ag~name1, t_kna1_ag~name2, 1 )
+                                                   AS names_solicitante,
+        t_bp001~bank_del_d                         AS fecha_baja_solicitante,
+        t_cliente~kunnr_rg                         AS id_pagador,
+        concat_with_space( t_kna1_rg~name1, t_kna1_rg~name2, 1 )
+                                                   AS names_pagador,
+        t_bp001~bank_del_d                         AS fecha_baja_pagador,
+        t_cliente~kunnr_we                         AS id_mostrador,
+        concat_with_space( t_kna1_we~name1, t_kna1_we~name2, 1 )
+                                                   AS names_mostrador,
+        t_bloqueo~block_reason                     AS id_suspension_cliente,
+        t_bloqueo~block_reason_txt                 AS suspension_cliente,
+        t_cliente~vwerk                            AS id_sucursal,
+        t001w~name1                                AS sucursal,
+        t_cliente~kdgrp                            AS id_segmento,
+        t151t~ktext                                AS segmento,
+        t_kna1_ag~stcd1                            AS rfc_cliente,
+        t_cliente~name_org1                        AS razon_social_cliente,
+        concat_with_space( t_kna1_we~stras,
+        concat_with_space( t_kna1_we~ort02,
+        concat_with_space( t_kna1_we~ort01,
+        concat_with_space( t_kna1_we~pstlz,
+           t_kna1_we~regio, 1 ) , 1 ) , 1 ) , 1 )  AS domicilio_mostrador,
+        t_bp001~bank_del_d                         AS fecha_baja_mostrador
+          FROM +t_cliente AS t_cliente
+          LEFT JOIN +t_kna1_ag AS t_kna1_ag  ON ( t_kna1_ag~kunnr   = t_cliente~kunnr_ag )
+          LEFT JOIN +t_kna1_rg AS t_kna1_rg  ON ( t_kna1_rg~kunnr   = t_cliente~kunnr_rg )
+          LEFT JOIN +t_kna1_we AS t_kna1_we  ON ( t_kna1_we~kunnr   = t_cliente~kunnr_we )
+          LEFT JOIN +t_bloqueo AS t_bloqueo  ON ( t_bloqueo~partner = t_cliente~kunnr_ag )
+          LEFT JOIN +t_bp001   AS t_bp001    ON ( t_bp001~partner   = t_cliente~partner  )
+          LEFT JOIN t001w                    ON ( t001w~werks       = t_cliente~vwerk    )
+          LEFT JOIN t151t                    ON ( t151t~spras       = @sy-langu AND
+                                                  t151t~kdgrp       = t_cliente~kdgrp )
+
+        )
+      SELECT *
+               FROM +result
+               ORDER BY id_interlocutorcomercial
+               INTO TABLE @DATA(result).
+
+
+*--------------------------------------------------------------------*
+    lr_tabledescr ?= cl_abap_tabledescr=>describe_by_data( result ).
+
+    CREATE DATA lo_data TYPE HANDLE lr_tabledescr.
+
+    ASSIGN lo_data->* TO <f_result>.
+
+    <f_result> = result[].
+*--------------------------------------------------------------------*

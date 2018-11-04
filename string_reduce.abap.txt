@@ -1,0 +1,21 @@
+REPORT yefr_string_reduce.
+
+SELECT
+FROM t100
+FIELDS *
+INTO TABLE @DATA(itab) UP TO 100 ROWS.
+
+LOOP AT itab INTO DATA(line)
+GROUP BY (  v1 = line-sprsl v2 = line-arbgb )
+ASSIGNING FIELD-SYMBOL(<g>).
+
+  IF <g>-v2 = <g>-v1.
+    CLEAR line.
+  ENDIF.
+
+ENDLOOP.
+
+DATA(res1) =
+  REDUCE string( INIT _r = ``
+    FOR GROUPS OF _s1 IN itab GROUP BY (  gv1 = _s1-sprsl gv2 = _s1-arbgb )
+    NEXT _r = _r && _s1-msgnr ).
